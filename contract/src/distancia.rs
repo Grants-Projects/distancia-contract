@@ -1,107 +1,153 @@
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::collections::{HashMap, LazyOption};
+use near_sdk::collections::{LookupMap, LazyOption};
 use near_sdk::json_types::U128;
-use near_sdk::{env, log, near_bindgen, AccountId, Balance, Gas, PanicOnDefault, PromiseOrValue};
+use near_sdk::{env, log, near_bindgen, AccountId, Balance, Gas, PromiseOrValue, Promise, PromiseResult, ext_contract, require};
 
 pub const TOKEN_CONTRACT: &str = "token.distancia.testnet";
 pub const XCC_GAS: Gas = Gas(20000000000000);
 
+#[ext_contract(ext_token_contract)]
+pub trait DistanciaToken {
+    fn get_token_owner(&self) -> AccountId;
+
+    fn transfer_tokens(&self, from: &AccountId, to: &AccountId, amount: &Balance, memo: Option<String>);
+
+    fn ft_balance_of(&self, account: &AccountId) -> U128;
+}
+
+#[ext_contract(ext_self)]
+pub trait ExtSelf {
+    fn on_get_token_owner_callback(&mut self) -> AccountId;
+
+    fn on_get_token_balance_callback(&mut self) -> U128;
+}
+
+
 #[near_bindgen]
-#[derive(Default, BorshDeserialize, BorshSerialize)]
+#[derive(BorshDeserialize, BorshSerialize)]
 pub struct Distancia {
-    distancia_price: u64,
+    distancia_price: u128,
 
-    ads_watched: LookUpMap<AccountId, Vec<String>>,
+    token_contract_owner: AccountId,
+
+    ads_watched: LookupMap<AccountId, Vec<String>>,
 }
 
-#ext_contract[(ext_token_contract)]
-trait TokenTransfer {
-    fn get_token_owner(&self);
 
-    fn transfer_tokens(&self, from: AccountId, to: AccountId, amount: Balance, memo: Option<String>);
-
-    fn ft_balance_of(&self, account: AccountId);
-}
 
 impl Default for Distancia {
     fn default() -> Self {
-        env::panic(b"Contract should be initialized before usage")
+        env::panic_str("Contract should be initialized before usage")
     }
 }
 
+
 #[near_bindgen]
 impl Distancia {
-    pub const token_contract: AccountId = AccountId::from_str(TOKEN_CONTRACT).unwrap();
 
+    #[init]
     pub fn new(
-        distancia_price: u64
+        distancia_price: u128
     ) -> Self {
-        let mut this = Self {
-            distancia_price: &distancia_price,
-            ads_watched: LookUpMap::new(b"s".to_vec()),
+        let this = Self {
+            distancia_price: distancia_price,
+            token_contract_owner: env::current_account_id(),
+            ads_watched: LookupMap::new(b"s".to_vec()),
         };
 
         this
     }
 
-    fn get_token_contract_owner() -> Promise {
-        ext_token_contract::ext(&token_contract)
+    #[private]
+    pub fn on_get_token_owner_callback(&mut self, #[callback_unwrap] owner: AccountId) {
+        if self.token_contract_owner != env::current_account_id() {
+            self.token_contract_owner = owner;
+        }
+    }
+
+    #[private]
+    pub fn on_transfer_tokens_callback(&mut self) {
+        
+    }
+
+    fn get_token_contract_owner(&self) -> Promise {
+        
+        ext_token_contract::ext(AccountId::new_unchecked(TOKEN_CONTRACT.to_string()))
             .get_token_owner()
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(XCC_GAS)
-                    .callback_promise_result()
+                    .on_get_token_owner_callback()
             )
+        
     }
 
-    fn get_address_token_balance() -> Promise {
-        ext_token_contract::ext(&token_contract)
-            .ft_balance_of()
-            .then(
-                Self::ext(env::current_account_id())
-                    .with_static_gas(XCC_GAS)
-                    .callback_promise_result()
-            )
-    }
+    // fn get_address_token_balance(&self, account: &AccountId) -> Promise {
+    //     let balance: U128;
+    //     ext_token_contract::ext(AccountId::new_unchecked(TOKEN_CONTRACT.to_string()))
+    //         .ft_balance_of(account)
+    //         .then(
+    //             Self::ext(env::current_account_id())
+    //                 .with_static_gas(XCC_GAS)
+    //                 .on_get_token_balance_callback()
+    //         )
+       
+    // }
 
-    pub fn ad_watched(&self, amount: U128, ad_key: String) -> Promise {
+    pub fn ad_watched(&mut self, amount: U128, ad_key: String) {
         
         let account_id = env::signer_account_id();
 
-        let token_contract_owner: AccountId = Self::get_token_contract_owner();
-
-        ext_token_contract::ext(&token_contract)
-            .transfer_tokens(token_contract_owner, &account_id, amount)
+        ext_token_contract::ext(AccountId::new_unchecked(TOKEN_CONTRACT.to_string()))
+            .transfer_tokens(&self.token_contract_owner, &account_id, &amount.0, Option::from("Transferring".to_string()))
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(XCC_GAS)
-                    .callback_promise_result()
+                    .on_transfer_tokens_callback()
             );
 
-        let ads: Vec<String> = ads_watched.get(&account_id);
-        ads.push(ad_key.to_string());
-        ads_watched.insert(account_id, ads);
+        let mut ads: Vec<String> = self.ads_watched.get(&account_id).unwrap();
+        ads.push(ad_key);
+        self.ads_watched.insert(&account_id, &ads);
     }
 
-    #[payable]
-    pub fn convert_distancia(&self, distancia_amount: U128) {
-        token.ft_balance_of(accounts(2)).0
+    
+    pub fn convert_distancia(&mut self, distancia_amount: U128, milestone_cleared: bool) {
+        
         let account_id = env::signer_account_id();
-        let token_contract_owner: AccountId = Self::get_token_contract_owner();
-        ext_token_contract::ext(&token_contract)
-            .transfer_tokens(token_contract_owner, &account_id, amount)
+        let near_amount: u128;
+        // let balance: U128 = self.get_address_token_balance(&account_id);
+        // require!(balance.0 >= distancia_amount.0, "Not enough tokens");
+        ext_token_contract::ext(AccountId::new_unchecked(TOKEN_CONTRACT.to_string()))
+            .transfer_tokens(&account_id, &self.token_contract_owner, &distancia_amount.0, Option::from("Transferring".to_string()))
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(XCC_GAS)
-                    .callback_promise_result()
+                    .on_transfer_tokens_callback()
             );
 
         
-        let near_amount = (distancia_amount.0)/self.distancia_price;
+        if milestone_cleared {
+            near_amount = (distancia_amount.0) * 12/(self.distancia_price * 10);
+        } else {
+            near_amount = (distancia_amount.0)/self.distancia_price;
+        }
+        
         Promise::new(account_id).transfer(near_amount);
     }
 
 
+    pub fn clear_milestone(&mut self, distancia_amount: U128) {
+        self.convert_distancia(distancia_amount, true);
+    }
+
+    pub fn get_distancia_price(&self) -> u128 {
+        self.distancia_price
+    }
+
+    pub fn get_ads_watched(&self, account_id: AccountId) -> Vec<String> {
+        self.ads_watched.get(&account_id).unwrap()
+    }
 
 }

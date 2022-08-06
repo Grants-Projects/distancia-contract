@@ -8,15 +8,7 @@ use near_sdk::collections::LazyOption;
 use near_sdk::json_types::U128;
 use near_sdk::{env, log, near_bindgen, AccountId, Balance, PanicOnDefault, BorshStorageKey, PromiseOrValue};
 
-const token_metadata: FungibleTokenMetadata = FungibleTokenMetadata {
-    spec: FT_METADATA_SPEC.to_string(),
-    name: "Distancia Token".to_string(),
-    symbol: "DIST".to_string(),
-    icon: None,
-    reference: None,
-    reference_hash: None,
-    decimals: 24,
-};
+pub const TOTAL_SUPPLY: U128 = U128(100_000_000);
 
 #[derive(BorshSerialize, BorshStorageKey)]
 enum StorageKey {
@@ -25,23 +17,25 @@ enum StorageKey {
 }
 
 #[near_bindgen]
-#[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
+#[derive(BorshDeserialize, BorshSerialize)]
 pub struct DistanciaToken {
     token: FungibleToken,
     metadata: LazyOption<FungibleTokenMetadata>,
     owner: AccountId,
 }
 
-// const DATA_IMAGE_SVG_NEAR_ICON: &str = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 288 288'%3E%3Cg id='l' data-name='l'%3E%3Cpath d='M187.58,79.81l-30.1,44.69a3.2,3.2,0,0,0,4.75,4.2L191.86,103a1.2,1.2,0,0,1,2,.91v80.46a1.2,1.2,0,0,1-2.12.77L102.18,77.93A15.35,15.35,0,0,0,90.47,72.5H87.34A15.34,15.34,0,0,0,72,87.84V201.16A15.34,15.34,0,0,0,87.34,216.5h0a15.35,15.35,0,0,0,13.08-7.31l30.1-44.69a3.2,3.2,0,0,0-4.75-4.2L96.14,186a1.2,1.2,0,0,1-2-.91V104.61a1.2,1.2,0,0,1,2.12-.77l89.55,107.23a15.35,15.35,0,0,0,11.71,5.43h3.13A15.34,15.34,0,0,0,216,201.16V87.84A15.34,15.34,0,0,0,200.66,72.5h0A15.35,15.35,0,0,0,187.58,79.81Z'/%3E%3C/g%3E%3C/svg%3E";
 
-#[near_bindgen]
-impl DistanciaToken {
-
-    /// Initializes the contract with the given total supply.
-    #[init]
-    pub fn new(
-        total_supply: U128,
-    ) -> Self {
+impl Default for DistanciaToken {
+    fn default() -> Self {
+        let token_metadata: FungibleTokenMetadata = FungibleTokenMetadata {
+            spec: FT_METADATA_SPEC.to_string(),
+            name: "Distancia Token".to_string(),
+            symbol: "DIST".to_string(),
+            icon: None,
+            reference: None,
+            reference_hash: None,
+            decimals: 24,
+        };
         assert!(!env::state_exists(), "Already initialized");
         token_metadata.assert_valid();
         let owner_id: AccountId = env::signer_account_id();
@@ -51,15 +45,29 @@ impl DistanciaToken {
             owner: owner_id.clone(),
         };
         this.token.internal_register_account(&owner_id);
-        this.token.internal_deposit(&owner_id, total_supply.into());
+        this.token.internal_deposit(&owner_id, TOTAL_SUPPLY.clone().into());
         near_contract_standards::fungible_token::events::FtMint {
             owner_id: &owner_id,
-            amount: &total_supply,
+            amount: &TOTAL_SUPPLY,
             memo: Some("Initial tokens supply is minted"),
         }
         .emit();
         this
     }
+}
+
+// const DATA_IMAGE_SVG_NEAR_ICON: &str = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 288 288'%3E%3Cg id='l' data-name='l'%3E%3Cpath d='M187.58,79.81l-30.1,44.69a3.2,3.2,0,0,0,4.75,4.2L191.86,103a1.2,1.2,0,0,1,2,.91v80.46a1.2,1.2,0,0,1-2.12.77L102.18,77.93A15.35,15.35,0,0,0,90.47,72.5H87.34A15.34,15.34,0,0,0,72,87.84V201.16A15.34,15.34,0,0,0,87.34,216.5h0a15.35,15.35,0,0,0,13.08-7.31l30.1-44.69a3.2,3.2,0,0,0-4.75-4.2L96.14,186a1.2,1.2,0,0,1-2-.91V104.61a1.2,1.2,0,0,1,2.12-.77l89.55,107.23a15.35,15.35,0,0,0,11.71,5.43h3.13A15.34,15.34,0,0,0,216,201.16V87.84A15.34,15.34,0,0,0,200.66,72.5h0A15.35,15.35,0,0,0,187.58,79.81Z'/%3E%3C/g%3E%3C/svg%3E";
+
+#[near_bindgen]
+impl DistanciaToken {
+
+    /// Initializes the contract with the given total supply.
+    // #[init]
+    // pub fn new(
+    //     total_supply: U128,
+    // ) -> Self {
+        
+    // }
 
     pub fn transfer_tokens(&mut self, from: AccountId, to: AccountId, amount: Balance, memo: Option<String>) {
         self.token.internal_transfer(&from, &to, amount, memo);
