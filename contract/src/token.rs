@@ -22,6 +22,7 @@ pub struct DistanciaToken {
     token: FungibleToken,
     metadata: LazyOption<FungibleTokenMetadata>,
     owner: AccountId,
+    distancia_contract: String,
 }
 
 
@@ -43,6 +44,7 @@ impl Default for DistanciaToken {
             token: FungibleToken::new(StorageKey::FungibleToken),
             metadata: LazyOption::new(StorageKey::Metadata, Some(&token_metadata)),
             owner: owner_id.clone(),
+            distancia_contract: String::default()
         };
         this.token.internal_register_account(&owner_id);
         this.token.internal_deposit(&owner_id, TOTAL_SUPPLY.clone().into());
@@ -61,16 +63,42 @@ impl Default for DistanciaToken {
 #[near_bindgen]
 impl DistanciaToken {
 
-    /// Initializes the contract with the given total supply.
-    // #[init]
-    // pub fn new(
-    //     total_supply: U128,
-    // ) -> Self {
-        
-    // }
+    pub fn mint_tokens_on_ad_watched(&mut self, account_id: AccountId, amount: Balance) {
+        require!(self.distancia_contract.chars().count() > 0, "Not allowed");
 
-    pub fn transfer_tokens(&mut self, from: AccountId, to: AccountId, amount: Balance, memo: Option<String>) {
-        self.token.internal_transfer(&from, &to, amount, memo);
+
+        require!(env::predecessor_account_id() == AccountId::new_unchecked(self.distancia_contract), "Not authorized");
+
+        self.token.internal_deposit(&account_id, amount);
+    }
+
+    pub fn burn_tokens_on_convert(&mut self, account_id: AccountId, amount: Balance) {
+        require!(self.distancia_contract.chars().count() > 0, "Not allowed");
+
+        require!(env::predecessor_account_id() == AccountId::new_unchecked(self.distancia_contract), "Not authorized");
+
+        self.token.internal_withdraw(&account_id, amount);
+    }
+
+    pub fn set_distancia_contract(&mut self, id: String) -> AccountId {
+
+        if let Ok(value) = AccountId::try_from(id.clone()) {
+            self.distancia_contract = id;
+            return value
+        } else {
+            env::panic_str("Not valid account Id");
+        }
+    }
+
+    pub fn get_token_balance(&self, account_id: AccountId) -> Balance {
+
+        self.token.ft_balance_of(account_id)
+    }
+
+    pub fn transfer_tokens(&mut self, to: AccountId, amount: Balance) {
+        let memo = format!("Transfer of {} tokens from {} to {}", amount.clone(), env::predecessor_account_id(), to.clone());
+
+        self.token.ft_transfer(to, amount, Some(String::from(memo)));
     }
 
     pub fn get_token_owner(&mut self) -> AccountId {
