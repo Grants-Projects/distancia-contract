@@ -95,18 +95,18 @@ impl Distancia {
 
     #[init]
     pub fn new(
-        distancia_price: u128,
-        minimum_ad_value: u128,
-        percentage_ad_watch_value: u128,
-        percentage_milestone_completion_value: u128,
-        percentage_commission_value: u128
+        distancia_price: U128,
+        minimum_ad_value: U128,
+        percentage_ad_watch_value: U128,
+        percentage_milestone_completion_value: U128,
+        percentage_commission_value: U128
     ) -> Self {
         let this = Self {
-            distancia_price: distancia_price,
-            minimum_ad_value: minimum_ad_value,
-            percentage_ad_watch_value: percentage_ad_watch_value,
-            percentage_milestone_completion_value: percentage_milestone_completion_value,
-            percentage_commission_value: percentage_commission_value,
+            distancia_price: distancia_price.0,
+            minimum_ad_value: minimum_ad_value.0,
+            percentage_ad_watch_value: percentage_ad_watch_value.0,
+            percentage_milestone_completion_value: percentage_milestone_completion_value.0,
+            percentage_commission_value: percentage_commission_value.0,
             token_contract_owner: env::current_account_id(),
             ads_watched: LookupMap::new(b"s".to_vec()),
             milestones: Vector::new(b"k".to_vec()),
