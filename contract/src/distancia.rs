@@ -1,6 +1,6 @@
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::collections::{LookupMap, LazyOption};
+use near_sdk::collections::{LookupMap, LazyOption, Vector};
 use near_sdk::json_types::U128;
 use near_sdk::{env, log, near_bindgen, AccountId, Balance, Gas, PromiseOrValue, Promise, PromiseResult, ext_contract, require};
 
@@ -10,64 +10,20 @@ pub const XCC_GAS: Gas = Gas(20000000000000);
 #[derive(Clone, BorshDeserialize, BorshSerialize)]
 pub struct Milestone {
     id: U128,
-    milestone_centralized_identifier: String,
     milestone_key: String,
     value: Balance
-}
-
-#[derive(BorshDeserialize, BorshSerialize)]
-pub struct MilestoneWithoutKey {
-    id: U128,
-    milestone_centralized_identifier: String,
-    value: Balance
-}
-
-impl From<Milestone> for MilestoneWithoutKey {
-    fn from(milestone: Milestone) -> MilestoneWithoutKey {
-        MilestoneWithoutKey { id: milestone.id, 
-            milestone_centralized_identifier: milestone.milestone_centralized_identifier, 
-            value: milestone.value 
-        }
-    }
 }
 
 #[derive(Clone, BorshDeserialize, BorshSerialize)]
 pub struct Ad {
     id: U128,
-    ad_centralized_identifier: String,
-    media_url: String,
+    metadata: String,
     owner: AccountId,
     ad_key: String,
     value: Balance,
     watch_value: Balance,
     watchers_allowed: u128,
     watched_count: u128
-}
-
-#[derive(Clone, BorshDeserialize, BorshSerialize)]
-pub struct AdWithoutKey {
-    id: U128,
-    ad_centralized_identifier: String,
-    media_url: String,
-    owner: AccountId,
-    value: Balance,
-    watch_value: Balance,
-    watchers_allowed: u128,
-    watched_count: u128
-}
-
-impl From<Ad> for AdWithoutKey {
-    fn from(ad: Ad) -> AdWithoutKey {
-        AdWithoutKey { id: ad.id, 
-            ad_centralized_identifier: ad.ad_centralized_identifier, 
-            media_url: ad.media_url, 
-            owner: ad.owner,
-            value: ad.value,
-            watch_value: ad.watch_value,
-            watchers_allowed: ad.watchers_allowed,
-            watched_count: ad.watched_count 
-        }
-    }
 }
 
 #[ext_contract(ext_token_contract)]
@@ -104,13 +60,19 @@ pub struct Distancia {
     //percentage of ad value that should be distributed to ad watchers: approxed to 4 decimal precision (100 * 10000)
     percentage_ad_watch_value: u128,
 
+    //percentage interest received when milestone is completed: approxed to 4 decimal precision (100 * 10000)
+    percentage_milestone_completion_value: u128,
+
+    //percentage commission consumed from ad value payment: approxed to 4 decimal precision (100 * 10000)
+    percentage_commission_value: u128,
+
     token_contract_owner: AccountId,
 
-    ads_watched: LookupMap<AccountId, Vec<U128>>,
+    ads_watched: LookupMap<AccountId, Vector<U128>>,
 
-    milestones: Vec<Milestone>,
+    milestones: Vector<Milestone>,
 
-    ads: Vec<Ad>,
+    ads: Vector<Ad>,
 
     ads_by_key: LookupMap<String, Ad>,
 
@@ -135,16 +97,20 @@ impl Distancia {
     pub fn new(
         distancia_price: u128,
         minimum_ad_value: u128,
-        percentage_ad_watch_value: u128
+        percentage_ad_watch_value: u128,
+        percentage_milestone_completion_value: u128,
+        percentage_commission_value: u128
     ) -> Self {
         let this = Self {
             distancia_price: distancia_price,
             minimum_ad_value: minimum_ad_value,
             percentage_ad_watch_value: percentage_ad_watch_value,
+            percentage_milestone_completion_value: percentage_milestone_completion_value,
+            percentage_commission_value: percentage_commission_value,
             token_contract_owner: env::current_account_id(),
             ads_watched: LookupMap::new(b"s".to_vec()),
-            milestones: Vec::new(),
-            ads: Vec::new(),
+            milestones: Vector::new(b"k".to_vec()),
+            ads: Vector::new(b"t"),
             ads_by_key: LookupMap::new(b"a".to_vec()),
             milestones_by_key: LookupMap::new(b"m".to_vec()),
             owner: env::signer_account_id()
@@ -153,7 +119,8 @@ impl Distancia {
         this
     }
 
-    pub fn upload_ad(&mut self, ad_key: String, media_url: String, centralized_identifier: String) -> AdWithoutKey {
+    #[result_serializer(borsh)]
+    pub fn upload_ad(&mut self, ad_key: String, metadata: String) -> Ad {
 
         require!(self.get_ad_by_key(ad_key.clone()).is_none(), "Ad with supplied key already exists");
 
@@ -161,19 +128,18 @@ impl Distancia {
 
         require!(val >= self.minimum_ad_value, "Ad value offered is very low");
 
-        let amount_to_pay = (val * 9)/10;
+        let amount_to_pay = (val * (1000000 - self.percentage_commission_value.clone()))/1000000;
 
         //1000000 to balance precision of percentage_ad_watch_value
-        let watch_value = amount_to_pay * self.percentage_ad_watch_value.clone() * self.distancia_price.clone() * 10 / (12 * 1000000);
+        let watch_value = amount_to_pay * self.percentage_ad_watch_value.clone() * self.distancia_price.clone() / (1000000 + self.percentage_milestone_completion_value);
 
         let watchers_allowed = 1000000 / self.percentage_ad_watch_value.clone();
 
-        let ad_id = U128::from(u128::from(self.ads.len() as u64) + 1);
+        let ad_id = U128::from(u128::from(self.ads.len()) + 1);
 
         let ad = Ad {
             id: ad_id,
-            ad_centralized_identifier: centralized_identifier,
-            media_url: media_url,
+            metadata: metadata,
             owner: env::signer_account_id(),
             value: val,
             ad_key: ad_key.clone(),
@@ -184,31 +150,30 @@ impl Distancia {
 
         self.ads_by_key.insert(&ad_key, &ad);
 
-        self.ads.push(ad.clone());
+        self.ads.push(&ad);
 
-        AdWithoutKey::from(ad)
+        ad
 
     }
 
     
 
-    
-    pub fn create_milestone(&mut self, milestone_key: String, valuation: Balance, centralized_identifier: String) -> MilestoneWithoutKey {
+    #[result_serializer(borsh)]
+    pub fn create_milestone(&mut self, milestone_key: String, valuation: Balance) -> Milestone {
         require!(env::signer_account_id() == self.owner, "Not authorized");
-        let milestone_id = U128::from(u128::from(self.milestones.len() as u64) + 1);
+        let milestone_id = U128::from(u128::from(self.milestones.len()) + 1);
 
         let milestone = Milestone {
             id: milestone_id,
             milestone_key: milestone_key.clone(),
-            milestone_centralized_identifier: centralized_identifier,
             value: valuation
         };
 
         self.milestones_by_key.insert(&milestone_key, &milestone);
 
-        self.milestones.push(milestone.clone());
+        self.milestones.push(&milestone);
 
-        MilestoneWithoutKey::from(milestone)
+        milestone
     }
 
     pub fn ad_watched(&mut self, ad_key: String) {
@@ -247,7 +212,7 @@ impl Distancia {
 
         
         if milestone_cleared {
-            near_amount = (distancia_amount) * 12/(self.distancia_price * 10);
+            near_amount = (distancia_amount) * (1000000 + self.percentage_milestone_completion_value)/(self.distancia_price * 1000000);
         } else {
             near_amount = (distancia_amount)/self.distancia_price;
         }
@@ -268,23 +233,47 @@ impl Distancia {
         
     }
 
+
+    pub fn set_minimum_ad_value(&mut self, new_min_ad_value: u128) {
+        require!(env::signer_account_id() == self.owner, "Not authorized");
+
+        self.minimum_ad_value = new_min_ad_value;
+    }
+
+    pub fn set_percentage_ad_watch_value(&mut self, new_percentage_ad_watch_value: u128) {
+        require!(env::signer_account_id() == self.owner, "Not authorized");
+
+        self.percentage_ad_watch_value = new_percentage_ad_watch_value;
+    }
+
+    pub fn set_percentage_commission_value(&mut self, new_percentage_commission_value: u128) {
+        require!(env::signer_account_id() == self.owner, "Not authorized");
+
+        self.percentage_commission_value = new_percentage_commission_value;
+    }
+
+    pub fn set_percentage_milestone_completion_value(&mut self, new_percentage_milestone_completion_value: u128) {
+        require!(env::signer_account_id() == self.owner, "Not authorized");
+
+        self.percentage_milestone_completion_value = new_percentage_milestone_completion_value;
+    }
+
+    pub fn set_distancia_price(&mut self, new_distancia_price: u128) {
+        require!(env::signer_account_id() == self.owner, "Not authorized");
+
+        self.distancia_price = new_distancia_price;
+    }
+
     
     #[result_serializer(borsh)]
-    pub fn get_ads(&self) -> Vec<AdWithoutKey> {
-        let ads = &self.ads;
+    pub fn get_ads(&self) -> Vec<Ad> {
 
-        ads.into_iter().map(|ad| {
-            let ad_ = ad.clone();
-
-            AdWithoutKey::from(ad_)
-        }).collect::<Vec<AdWithoutKey>>()
+        self.ads.iter().map(|ad| ad).collect()
     }
 
     #[result_serializer(borsh)]
-    pub fn get_milestones(&self) -> Vec<MilestoneWithoutKey> {
-        let milestones = &self.milestones;
-
-        milestones.into_iter().map(|milestone| MilestoneWithoutKey::from(milestone.clone())).collect::<Vec<MilestoneWithoutKey>>()
+    pub fn get_milestones(&self) -> Vec<Milestone> {
+        self.milestones.iter().map(|ad| ad).collect()
     }
 
     pub fn get_token_contract_owner(&self) -> Promise {
@@ -306,10 +295,22 @@ impl Distancia {
     }
 
     #[result_serializer(borsh)]
-    pub fn get_ads_watched(&self, account_id: AccountId) -> Vec<AdWithoutKey> {
-        let ad_ids = self.ads_watched.get(&account_id).unwrap_or(Vec::new());
+    pub fn get_ads_watched(&self, account_id: AccountId) -> Vector<Ad> {
+        let ad_ids = self.ads_watched.get(&account_id).unwrap_or(Vector::new(b"p"));
 
-        ad_ids.into_iter().map(|ad_id| AdWithoutKey::from(self.ads[(ad_id.0 - 1) as usize].clone())).collect::<Vec<AdWithoutKey>>()
+        let mut ads = Vector::new(b"z");
+
+        if !ad_ids.is_empty() {
+        
+            for id in ad_ids.iter() {
+                ads.push(&self.ads.get((id.0 - 1) as u64).unwrap());
+            }
+            
+        }
+
+        ads
+
+        //ad_ids.iter().map(|ad_id| self.ads.get((ad_id.0 - 1) as u64).unwrap()).into()
     }
 
     #[private]
@@ -335,15 +336,15 @@ impl Distancia {
 
     #[private]
     pub fn on_mint_tokens_callback(&mut self, account_id: &AccountId, ad_id: U128) {
-        let mut ads: Vec<U128> = self.ads_watched.get(&account_id).unwrap_or(Vec::new());
-        ads.push(ad_id);
+        let mut ads = self.ads_watched.get(&account_id).unwrap_or(Vector::new(b"p"));
+        ads.push(&ad_id);
         self.ads_watched.insert(&account_id, &ads);
 
-        let mut ad = self.ads[(ad_id.0 - 1) as usize].clone();
+        let mut ad = self.ads.get((ad_id.0 - 1) as u64).unwrap();
 
         ad.watched_count += 1;
         self.ads_by_key.insert(&ad.ad_key, &ad);
-        self.ads[(ad_id.0 - 1) as usize] = ad;
+        self.ads.replace((ad_id.0 - 1) as u64, &ad);
     }
 
     #[private]

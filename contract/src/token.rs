@@ -144,15 +144,15 @@ mod tests {
         builder
     }
 
-    #[test]
-    fn test_new() {
-        let mut context = get_context(accounts(1));
-        testing_env!(context.build());
-        let contract = DistanciaToken::new(TOTAL_SUPPLY.into());
-        testing_env!(context.is_view(true).build());
-        assert_eq!(contract.token.ft_total_supply().0, TOTAL_SUPPLY);
-        assert_eq!(contract.ft_balance_of(accounts(1)).0, TOTAL_SUPPLY);
-    }
+    // #[test]
+    // fn test_new() {
+    //     let mut context = get_context(accounts(1));
+    //     testing_env!(context.build());
+    //     let contract = DistanciaToken::new(TOTAL_SUPPLY.into());
+    //     testing_env!(context.is_view(true).build());
+    //     assert_eq!(contract.token.ft_total_supply().0, TOTAL_SUPPLY);
+    //     assert_eq!(contract.ft_balance_of(accounts(1)).0, TOTAL_SUPPLY);
+    // }
 
     #[test]
     #[should_panic(expected = "The contract is not initialized")]
@@ -166,7 +166,7 @@ mod tests {
     fn test_transfer() {
         let mut context = get_context(accounts(2));
         testing_env!(context.build());
-        let mut token = DistanciaToken::new(TOTAL_SUPPLY.into());
+        let mut token = DistanciaToken::default();
         testing_env!(context
             .storage_usage(env::storage_usage())
             .attached_deposit(token.storage_balance_bounds().min.into())
