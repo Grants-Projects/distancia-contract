@@ -6,7 +6,7 @@ use near_contract_standards::fungible_token::FungibleToken;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LazyOption;
 use near_sdk::json_types::U128;
-use near_sdk::{env, log, near_bindgen, AccountId, Balance, PanicOnDefault, BorshStorageKey, PromiseOrValue};
+use near_sdk::{env, log, near_bindgen, AccountId, Balance, PanicOnDefault, BorshStorageKey, PromiseOrValue, require};
 
 pub const TOTAL_SUPPLY: U128 = U128(100_000_000);
 
@@ -67,7 +67,7 @@ impl DistanciaToken {
         require!(self.distancia_contract.chars().count() > 0, "Not allowed");
 
 
-        require!(env::predecessor_account_id() == AccountId::new_unchecked(self.distancia_contract), "Not authorized");
+        require!(env::predecessor_account_id() == AccountId::new_unchecked(self.distancia_contract.clone()), "Not authorized");
 
         self.token.internal_deposit(&account_id, amount);
     }
@@ -75,12 +75,13 @@ impl DistanciaToken {
     pub fn burn_tokens_on_convert(&mut self, account_id: AccountId, amount: Balance) {
         require!(self.distancia_contract.chars().count() > 0, "Not allowed");
 
-        require!(env::predecessor_account_id() == AccountId::new_unchecked(self.distancia_contract), "Not authorized");
+        require!(env::predecessor_account_id() == AccountId::new_unchecked(self.distancia_contract.clone()), "Not authorized");
 
         self.token.internal_withdraw(&account_id, amount);
     }
 
     pub fn set_distancia_contract(&mut self, id: String) -> AccountId {
+        require!(env::signer_account_id() == self.owner, "Not authorized");
 
         if let Ok(value) = AccountId::try_from(id.clone()) {
             self.distancia_contract = id;
@@ -92,13 +93,13 @@ impl DistanciaToken {
 
     pub fn get_token_balance(&self, account_id: AccountId) -> Balance {
 
-        self.token.ft_balance_of(account_id)
+        self.token.ft_balance_of(account_id).into()
     }
 
     pub fn transfer_tokens(&mut self, to: AccountId, amount: Balance) {
         let memo = format!("Transfer of {} tokens from {} to {}", amount.clone(), env::predecessor_account_id(), to.clone());
 
-        self.token.ft_transfer(to, amount, Some(String::from(memo)));
+        self.token.ft_transfer(to, U128::from(amount), Some(String::from(memo)));
     }
 
     pub fn get_token_owner(&mut self) -> AccountId {
