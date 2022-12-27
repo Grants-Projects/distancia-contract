@@ -2,19 +2,22 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LookupMap, LazyOption, Vector};
 use near_sdk::json_types::U128;
+use near_sdk::serde::Serialize;
 use near_sdk::{env, log, near_bindgen, AccountId, Balance, Gas, PromiseOrValue, Promise, PromiseResult, ext_contract, require};
 
 pub const TOKEN_CONTRACT: &str = "token.distancia.testnet";
 pub const XCC_GAS: Gas = Gas(20000000000000);
 
-#[derive(Clone, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, BorshDeserialize, BorshSerialize, Serialize)]
+#[serde(crate = "near_sdk::serde")]
 pub struct Milestone {
     id: U128,
     milestone_key: String,
     value: Balance
 }
 
-#[derive(Clone, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, BorshDeserialize, BorshSerialize, Serialize)]
+#[serde(crate = "near_sdk::serde")]
 pub struct Ad {
     id: U128,
     metadata: String,
@@ -119,7 +122,7 @@ impl Distancia {
         this
     }
 
-    #[result_serializer(borsh)]
+    #[payable]
     pub fn upload_ad(&mut self, ad_key: String, metadata: String) -> Ad {
 
         require!(self.get_ad_by_key(ad_key.clone()).is_none(), "Ad with supplied key already exists");
@@ -157,16 +160,14 @@ impl Distancia {
     }
 
     
-
-    #[result_serializer(borsh)]
-    pub fn create_milestone(&mut self, milestone_key: String, valuation: Balance) -> Milestone {
+    pub fn create_milestone(&mut self, milestone_key: String, valuation: U128) -> Milestone {
         require!(env::signer_account_id() == self.owner, "Not authorized");
         let milestone_id = U128::from(u128::from(self.milestones.len()) + 1);
 
         let milestone = Milestone {
             id: milestone_id,
             milestone_key: milestone_key.clone(),
-            value: valuation
+            value: valuation.0
         };
 
         self.milestones_by_key.insert(&milestone_key, &milestone);
@@ -197,13 +198,13 @@ impl Distancia {
     }
 
     
-    pub fn convert_distancia(&mut self, distancia_amount: Balance, milestone_cleared: bool) {
+    pub fn convert_distancia(&mut self, distancia_amount: U128, milestone_cleared: bool) {
         
         let account_id = env::signer_account_id();
         let near_amount: u128;
         
         ext_token_contract::ext(AccountId::new_unchecked(TOKEN_CONTRACT.to_string()))
-            .burn_tokens_on_convert(account_id.clone(), distancia_amount.clone())
+            .burn_tokens_on_convert(account_id.clone(), distancia_amount.0.clone())
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(XCC_GAS)
@@ -212,9 +213,9 @@ impl Distancia {
 
         
         if milestone_cleared {
-            near_amount = (distancia_amount) * (1000000 + self.percentage_milestone_completion_value)/(self.distancia_price * 1000000);
+            near_amount = (distancia_amount.0) * (1000000 + self.percentage_milestone_completion_value)/(self.distancia_price * 1000000);
         } else {
-            near_amount = (distancia_amount)/self.distancia_price;
+            near_amount = (distancia_amount.0)/self.distancia_price;
         }
 
         
@@ -226,7 +227,7 @@ impl Distancia {
 
         if let Some(milestone) = self.get_milestone_by_key(milestone_key) {
             let distancia_amount = milestone.value;
-            self.convert_distancia(distancia_amount, true);
+            self.convert_distancia(U128::from(distancia_amount), true);
         } else {
             env::panic_str("Milestone doesnt exist");
         }
@@ -234,44 +235,42 @@ impl Distancia {
     }
 
 
-    pub fn set_minimum_ad_value(&mut self, new_min_ad_value: u128) {
+    pub fn set_minimum_ad_value(&mut self, new_min_ad_value: U128) {
         require!(env::signer_account_id() == self.owner, "Not authorized");
 
-        self.minimum_ad_value = new_min_ad_value;
+        self.minimum_ad_value = new_min_ad_value.0;
     }
 
-    pub fn set_percentage_ad_watch_value(&mut self, new_percentage_ad_watch_value: u128) {
+    pub fn set_percentage_ad_watch_value(&mut self, new_percentage_ad_watch_value: U128) {
         require!(env::signer_account_id() == self.owner, "Not authorized");
 
-        self.percentage_ad_watch_value = new_percentage_ad_watch_value;
+        self.percentage_ad_watch_value = new_percentage_ad_watch_value.0;
     }
 
-    pub fn set_percentage_commission_value(&mut self, new_percentage_commission_value: u128) {
+    pub fn set_percentage_commission_value(&mut self, new_percentage_commission_value: U128) {
         require!(env::signer_account_id() == self.owner, "Not authorized");
 
-        self.percentage_commission_value = new_percentage_commission_value;
+        self.percentage_commission_value = new_percentage_commission_value.0;
     }
 
-    pub fn set_percentage_milestone_completion_value(&mut self, new_percentage_milestone_completion_value: u128) {
+    pub fn set_percentage_milestone_completion_value(&mut self, new_percentage_milestone_completion_value: U128) {
         require!(env::signer_account_id() == self.owner, "Not authorized");
 
-        self.percentage_milestone_completion_value = new_percentage_milestone_completion_value;
+        self.percentage_milestone_completion_value = new_percentage_milestone_completion_value.0;
     }
 
-    pub fn set_distancia_price(&mut self, new_distancia_price: u128) {
+    pub fn set_distancia_price(&mut self, new_distancia_price: U128) {
         require!(env::signer_account_id() == self.owner, "Not authorized");
 
-        self.distancia_price = new_distancia_price;
+        self.distancia_price = new_distancia_price.0;
     }
 
     
-    #[result_serializer(borsh)]
     pub fn get_ads(&self) -> Vec<Ad> {
 
         self.ads.iter().map(|ad| ad).collect()
     }
 
-    #[result_serializer(borsh)]
     pub fn get_milestones(&self) -> Vec<Milestone> {
         self.milestones.iter().map(|ad| ad).collect()
     }
@@ -290,38 +289,36 @@ impl Distancia {
 
 
 
-    pub fn get_distancia_price(&self) -> u128 {
-        self.distancia_price
+    pub fn get_distancia_price(&self) -> U128 {
+        U128(self.distancia_price.clone())
     }
 
-    #[result_serializer(borsh)]
-    pub fn get_ads_watched(&self, account_id: AccountId) -> Vector<Ad> {
+
+    pub fn get_ads_watched(&self, account_id: AccountId) -> Vec<Ad> {
         let ad_ids = self.ads_watched.get(&account_id).unwrap_or(Vector::new(b"p"));
 
-        let mut ads = Vector::new(b"z");
+        // let mut ads = Vector::new(b"z");
 
-        if !ad_ids.is_empty() {
+        // if !ad_ids.is_empty() {
         
-            for id in ad_ids.iter() {
-                ads.push(&self.ads.get((id.0 - 1) as u64).unwrap());
-            }
+        //     for id in ad_ids.iter() {
+        //         ads.push(&self.ads.get((id.0 - 1) as u64).unwrap());
+        //     }
             
-        }
+        // }
 
-        ads
+        // ads
 
-        //ad_ids.iter().map(|ad_id| self.ads.get((ad_id.0 - 1) as u64).unwrap()).into()
+        ad_ids.iter().map(|ad_id| self.ads.get((ad_id.0 - 1) as u64).unwrap()).collect()
     }
 
     #[private]
-    #[result_serializer(borsh)]
     pub fn get_ad_by_key(&self, ad_key: String) -> Option<Ad> {
 
         self.ads_by_key.get(&ad_key)
     }
 
     #[private]
-    #[result_serializer(borsh)]
     pub fn get_milestone_by_key(&self, milestone_key: String) -> Option<Milestone> {
 
         self.milestones_by_key.get(&milestone_key)
