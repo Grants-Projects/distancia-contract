@@ -234,6 +234,20 @@ impl Distancia {
         
     }
 
+    pub fn withdraw_from_contract(&self, amount: U128, account_to: AccountId, ignore_amount: Option<bool>) {
+        let ignore = ignore_amount.unwrap_or_default();
+
+        require!(self.owner == env::signer_account_id(), "Not authorized");
+
+        require!(if ignore {
+            amount.0 <= env::account_balance()
+        } else {
+            amount.0 <= self.get_surplus_balance().0
+        }, "Not sufficient amount");
+
+        Promise::new(account_to).transfer(amount.0);
+    }
+
 
     pub fn set_minimum_ad_value(&mut self, new_min_ad_value: U128) {
         require!(env::signer_account_id() == self.owner, "Not authorized");
@@ -273,6 +287,21 @@ impl Distancia {
 
     pub fn get_milestones(&self) -> Vec<Milestone> {
         self.milestones.iter().map(|ad| ad).collect()
+    }
+
+    pub fn get_contract_balance(&self) -> U128 {
+        U128::from(env::account_balance())
+    }
+
+    pub fn get_surplus_balance(&self) -> U128 {
+        let mut surplus: u128 = 0;
+        self.ads.iter().for_each(|ad| {
+            let value_to_pay = ad.watch_value * ad.watchers_allowed * (1000000 + self.percentage_milestone_completion_value)/(self.distancia_price * 1000000);
+            surplus += value_to_pay;
+
+        });
+
+        U128::from(surplus)
     }
 
     pub fn get_token_contract_owner(&self) -> Promise {
