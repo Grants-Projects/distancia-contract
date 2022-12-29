@@ -65,7 +65,7 @@ impl DistanciaToken {
 
     pub fn mint_tokens_on_ad_watched(&mut self, account_id: AccountId, amount: Balance) {
         require!(self.distancia_contract.chars().count() > 0, "Not allowed");
-        if self.token.accounts.get(&account_id).is_some() {
+        if self.token.accounts.get(&account_id).is_none() {
             self.token.internal_register_account(&account_id);
         }
 
