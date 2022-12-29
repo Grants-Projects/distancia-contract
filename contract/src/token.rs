@@ -65,11 +65,21 @@ impl DistanciaToken {
 
     pub fn mint_tokens_on_ad_watched(&mut self, account_id: AccountId, amount: Balance) {
         require!(self.distancia_contract.chars().count() > 0, "Not allowed");
+        if self.token.accounts.get(&account_id).is_some() {
+            self.token.internal_register_account(&account_id);
+        }
 
 
         require!(env::predecessor_account_id() == AccountId::new_unchecked(self.distancia_contract.clone()), "Not authorized");
 
         self.token.internal_deposit(&account_id, amount);
+        let json_amount = U128::from(amount);
+
+        near_contract_standards::fungible_token::events::FtMint {
+            owner_id: &account_id,
+            amount: &json_amount,
+            memo: Some(format!("Minted {:?} Distancia tokens to {}", json_amount, account_id).as_str()),
+        }.emit();
     }
 
     pub fn burn_tokens_on_convert(&mut self, account_id: AccountId, amount: Balance) {
@@ -78,6 +88,14 @@ impl DistanciaToken {
         require!(env::predecessor_account_id() == AccountId::new_unchecked(self.distancia_contract.clone()), "Not authorized");
 
         self.token.internal_withdraw(&account_id, amount);
+
+        let json_amount = U128::from(amount);
+
+        near_contract_standards::fungible_token::events::FtBurn {
+            owner_id: &account_id,
+            amount: &json_amount,
+            memo: Some(format!("Minted {:?} Distancia tokens to {}", json_amount, account_id).as_str()),
+        }.emit();
     }
 
     pub fn set_distancia_contract(&mut self, id: String) -> AccountId {
